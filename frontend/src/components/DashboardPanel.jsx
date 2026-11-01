@@ -21,6 +21,7 @@ export default function DashboardPanel({
   uiLanguage = 'hi',
   activeSessionId,
   onSelectSession,
+  onNewSession,
   activeTab,
   setActiveTab,
   latestToolCalls,
@@ -153,6 +154,7 @@ export default function DashboardPanel({
             <SessionHistory
               activeSessionId={activeSessionId}
               onSelectSession={onSelectSession}
+              onNewSession={onNewSession}
               t={t}
             />
           </div>

@@ -9,7 +9,9 @@ from app.db.repository import (
     get_session_messages,
     save_advisory,
     list_advisories,
-    get_advisory
+    get_advisory,
+    delete_session,
+    delete_advisory
 )
 
 @pytest.mark.asyncio
@@ -90,4 +92,29 @@ async def test_advisory_persistence():
 
     adv_list = await list_advisories(session_id=sid)
     assert any(a["id"] == adv_id for a in adv_list)
+
+@pytest.mark.asyncio
+async def test_delete_session_and_advisory():
+    await init_db()
+    session = await create_or_update_session(language="kn", location_name="Bengaluru")
+    sid = session["id"]
+
+    adv = await save_advisory(
+        session_id=sid,
+        crop_name="Paddy",
+        language="kn",
+        full_advisory_text="ಭತ್ತ ಬೆಳೆಯಲು ಸೂಕ್ತ ಸಮಯ."
+    )
+    adv_id = adv["id"]
+
+    # Verify advisory deletion
+    deleted_adv = await delete_advisory(adv_id)
+    assert deleted_adv is True
+    assert await get_advisory(adv_id) is None
+
+    # Verify session deletion
+    deleted_sess = await delete_session(sid)
+    assert deleted_sess is True
+    assert await get_session(sid) is None
+
 

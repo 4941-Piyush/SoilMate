@@ -62,9 +62,41 @@ async def speech_to_text(audio_bytes: bytes, filename: str = "audio.wav", langua
             "error": str(e)
         }
 
+def clean_text_for_speech(text: str) -> str:
+    """Prepare text for natural, conversational TTS synthesis without markdown noise."""
+    import re
+    # Remove markdown headers, bold, italics, code blocks
+    cleaned = re.sub(r'[*_#`~]', '', text)
+    # Remove bullet markers at line start
+    cleaned = re.sub(r'^\s*[-•*]\s+', '', cleaned, flags=re.MULTILINE)
+    # Remove numbered list prefixes like "1. ", "2. "
+    cleaned = re.sub(r'^\s*\d+\.\s+', '', cleaned, flags=re.MULTILINE)
+    # Remove common emojis
+    cleaned = re.sub(r'[\U00010000-\U0010ffff]', '', cleaned)
+    # Collapse multiple newlines into period pause
+    cleaned = re.sub(r'\n+', '. ', cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+    # If long, truncate cleanly at sentence boundary (within 450 chars)
+    if len(cleaned) > 450:
+        truncated = cleaned[:450]
+        # Look for last sentence terminator: Devanagari danda (।), period, question mark, exclamation
+        last_punct = max(
+            truncated.rfind('।'),
+            truncated.rfind('.'),
+            truncated.rfind('?'),
+            truncated.rfind('!')
+        )
+        if last_punct > 150:
+            cleaned = truncated[:last_punct + 1]
+        else:
+            cleaned = truncated.rsplit(' ', 1)[0] + '।'
+
+    return cleaned
+
 async def text_to_speech(text: str, language: str = "hi") -> Optional[str]:
     """
-    Synthesize text into natural voice audio using Sarvam Bulbul v2 TTS.
+    Synthesize text into natural voice audio using Sarvam Bulbul v3 TTS.
     Returns base64-encoded WAV audio string.
     """
     sarvam_key = settings.sarvam_api_key.strip()
@@ -74,8 +106,9 @@ async def text_to_speech(text: str, language: str = "hi") -> Optional[str]:
     lang_iso = normalize_language_code(language)
     lang_code = SARVAM_LANG_MAP.get(lang_iso, "hi-IN")
     
-    # Truncate text for TTS if overly long (first 400 chars) for prompt latency
-    tts_text = text[:400].strip()
+    tts_text = clean_text_for_speech(text)
+    if not tts_text:
+        return None
 
     url = "https://api.sarvam.ai/text-to-speech"
     headers = {

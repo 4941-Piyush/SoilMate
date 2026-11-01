@@ -36,7 +36,8 @@ SARVAM_LANG_MAP = {
     "gu": "gu-IN",
     "pa": "pa-IN",
     "ml": "ml-IN",
-    "od": "od-IN",
+    "od": "or-IN",
+    "or": "or-IN",
     "en": "en-IN"
 }
 

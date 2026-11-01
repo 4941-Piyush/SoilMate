@@ -309,3 +309,26 @@ async def get_advisory(advisory_id: str) -> Optional[Dict[str, Any]]:
     finally:
         await conn.close()
 
+async def delete_session(session_id: str) -> bool:
+    """Delete a session, cascading to messages and associated advisories."""
+    conn = await get_db_connection()
+    try:
+        await conn.execute("DELETE FROM advisories WHERE session_id = ?", (session_id,))
+        await conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+        cursor = await conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        await conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        await conn.close()
+
+async def delete_advisory(advisory_id: str) -> bool:
+    """Delete a specific crop advisory."""
+    conn = await get_db_connection()
+    try:
+        cursor = await conn.execute("DELETE FROM advisories WHERE id = ?", (advisory_id,))
+        await conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        await conn.close()
+
+

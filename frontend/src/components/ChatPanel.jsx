@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react'
-import { Sprout, MessageSquare, X, ChevronUp } from 'lucide-react'
+import { Sprout, MessageSquare, X, ChevronUp, Plus } from 'lucide-react'
 import VoiceAssistant from './VoiceAssistant'
 import ChatMessages from './ChatMessages'
 import ChatInput from './ChatInput'
@@ -23,6 +23,7 @@ export default function ChatPanel({
   messages,
   setMessages,
   onUserActivity,
+  onNewSession,
   streamingEvent,
   setStreamingEvent,
   setFarmerProfile
@@ -238,17 +239,32 @@ export default function ChatPanel({
               </div>
             </div>
 
-            {/* Cross Button to return to Voice Orb Screen */}
-            <button
-              onClick={() => {
-                stopCurrentAudio()
-                setChatWindowOpen(false)
-              }}
-              className="flex h-8 w-8 items-center justify-center rounded-xl bg-purple-950 border border-purple-500/30 text-purple-200 hover:text-white hover:bg-purple-900 transition shadow-glass cursor-pointer"
-              title="Close and return to talk button"
-            >
-              <X size={18} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  stopCurrentAudio()
+                  onNewSession?.()
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-purple-900/40 border border-purple-500/30 text-purple-200 hover:text-white hover:bg-purple-800/60 transition shadow-glass text-xs font-semibold cursor-pointer"
+                title={t.newSession || "New Session"}
+              >
+                <Plus size={14} className="text-cyan-400" />
+                <span className="hidden sm:inline">{t.newSession || "New Session"}</span>
+              </button>
+
+              {/* Cross Button to return to Voice Orb Screen */}
+              <button
+                onClick={() => {
+                  stopCurrentAudio()
+                  setChatWindowOpen(false)
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-xl bg-purple-950 border border-purple-500/30 text-purple-200 hover:text-white hover:bg-purple-900 transition shadow-glass cursor-pointer"
+                title="Close and return to talk button"
+              >
+                <X size={18} />
+              </button>
+            </div>
           </header>
 
           {/* Compact context pill row inside chat */}
@@ -300,6 +316,19 @@ export default function ChatPanel({
                   <p className="text-[11px] text-purple-300/70 font-medium">{t.appSubtitle}</p>
                 </div>
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  stopCurrentAudio()
+                  onNewSession?.()
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-purple-900/40 border border-purple-500/30 text-purple-200 hover:text-white hover:bg-purple-800/60 transition shadow-glass text-xs font-semibold cursor-pointer"
+                title={t.newSession || "New Session"}
+              >
+                <Plus size={14} className="text-cyan-400" />
+                <span className="hidden sm:inline">{t.newSession || "New Session"}</span>
+              </button>
             </div>
 
             {/* Controls: UI Language and Location */}

@@ -139,6 +139,14 @@ export async function fetchSessionDetail(sessionId) {
   return request(`/sessions/${encodeURIComponent(sessionId)}`)
 }
 
+/** Delete a session and its associated chat history */
+export async function deleteSessionApi(sessionId) {
+  if (!sessionId) return
+  return request(`/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE'
+  })
+}
+
 /** List saved crop advisories & schedules */
 export async function fetchAdvisories({ sessionId, crop, limit = 20 } = {}) {
   const params = new URLSearchParams()
@@ -151,6 +159,14 @@ export async function fetchAdvisories({ sessionId, crop, limit = 20 } = {}) {
 /** Get full details of a specific advisory */
 export async function fetchAdvisoryDetail(id) {
   return request(`/advisories/${encodeURIComponent(id)}`)
+}
+
+/** Delete a saved crop advisory */
+export async function deleteAdvisoryApi(advisoryId) {
+  if (!advisoryId) return
+  return request(`/advisories/${encodeURIComponent(advisoryId)}`, {
+    method: 'DELETE'
+  })
 }
 
 /** Fetch live 7-day weather from Open-Meteo */

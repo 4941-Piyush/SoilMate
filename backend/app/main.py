@@ -13,7 +13,9 @@ from app.db.repository import (
     get_session,
     get_session_messages,
     list_advisories,
-    get_advisory
+    get_advisory,
+    delete_session,
+    delete_advisory
 )
 from app.models.schemas import (
     ChatRequest,
@@ -177,6 +179,14 @@ async def get_chat_history(session_id: str):
     msgs = await get_session_messages(session_id)
     return [MessageRecord(**m) for m in msgs]
 
+@app.delete("/api/sessions/{session_id}")
+async def remove_session(session_id: str):
+    """Delete a conversation session, cascading to its messages and related advisories."""
+    success = await delete_session(session_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"status": "success", "message": f"Session {session_id} deleted successfully"}
+
 # ==========================================
 # CROP ADVISORIES & SCHEDULES
 # ==========================================
@@ -198,6 +208,15 @@ async def get_advisory_by_id(advisory_id: str):
     if not adv:
         raise HTTPException(status_code=404, detail="Advisory not found")
     return AdvisoryDetail(**adv)
+
+@app.delete("/api/advisories/{advisory_id}")
+async def remove_advisory(advisory_id: str):
+    """Delete a specific crop advisory."""
+    success = await delete_advisory(advisory_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Advisory not found")
+    return {"status": "success", "message": f"Advisory {advisory_id} deleted successfully"}
+
 
 # ==========================================
 # VOICE & MULTILINGUAL UTILITIES

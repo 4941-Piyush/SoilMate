@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import ChatPanel from './components/ChatPanel'
 import DashboardPanel from './components/DashboardPanel'
 import { fetchChatHistory, fetchSessionDetail, fetchAdvisoryDetail } from './services/api'
+import { stopCurrentAudio } from './utils/audioManager'
 
 export default function App() {
   // 1. UI Language: persistent in localStorage, defaults to 'hi'
@@ -93,6 +94,17 @@ export default function App() {
     setActiveTab('workflow')
   }
 
+  // Create a brand new session from frontend
+  const handleNewSession = () => {
+    stopCurrentAudio()
+    setSessionId(null)
+    setMessages([])
+    setStreamingEvent(null)
+    setLatestAdvisory(null)
+    setFarmerProfile(null)
+    setActiveTab('workflow')
+  }
+
   // Load chat history & remembered farmer profile when a previous session is selected
   const handleSelectSession = async (sid) => {
     if (!sid) return
@@ -144,6 +156,7 @@ export default function App() {
         messages={messages}
         setMessages={setMessages}
         onUserActivity={handleUserActivity}
+        onNewSession={handleNewSession}
         streamingEvent={streamingEvent}
         setStreamingEvent={setStreamingEvent}
         setFarmerProfile={setFarmerProfile}
@@ -155,6 +168,7 @@ export default function App() {
         uiLanguage={uiLanguage}
         activeSessionId={sessionId}
         onSelectSession={handleSelectSession}
+        onNewSession={handleNewSession}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         latestToolCalls={latestToolCalls}
