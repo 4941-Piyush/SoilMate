@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { MapPin, Search, Loader2, X, Plus } from 'lucide-react'
+import { MapPin, Search, Loader2, X } from 'lucide-react'
 import { geocodePlace } from '../services/api'
 import { localizePlaceName } from '../utils/geoLocalization'
 
@@ -81,9 +81,8 @@ export default function LocationInput({ location, onLocationChange, t }) {
             </button>
           </>
         ) : (
-          <span className="flex-1 text-xs text-purple-300/70 font-medium flex items-center gap-1">
-            <Plus size={13} className="text-purple-400" />
-            <span>{t?.setLocation || 'Set Location (or tell agent)'}</span>
+          <span className="flex-1 text-xs text-purple-300/70 font-medium">
+            {t?.setLocation || 'Set Location (or tell agent)'}
           </span>
         )}
       </div>

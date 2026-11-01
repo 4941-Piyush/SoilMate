@@ -11,7 +11,10 @@ class Settings(BaseModel):
         default_factory=lambda: (os.getenv("GEMINI_API_KEYS") or os.getenv("GEMINI_API_KEY") or "").strip()
     )
     gemini_model: str = Field(
-        default_factory=lambda: (os.getenv("GEMINI_MODEL") or "gemini-3.8-flash").strip()
+        default_factory=lambda: (os.getenv("GEMINI_MODEL") or "gemini-3.5-flash").strip()
+    )
+    gemini_live_model: str = Field(
+        default_factory=lambda: (os.getenv("GEMINI_LIVE_MODEL") or "gemini-3.1-flash-live-preview").strip()
     )
     
     sarvam_api_key: str = Field(default_factory=lambda: (os.getenv("SARVAM_API_KEY") or "").strip())

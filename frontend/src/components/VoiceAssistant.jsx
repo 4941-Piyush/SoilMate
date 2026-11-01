@@ -161,9 +161,9 @@ export default function VoiceAssistant({
             )}
             <button
               onClick={toggle}
-              className="mt-1 flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition shadow-glass border border-purple-400/40 cursor-pointer"
+              className="mt-1 flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-red-600/80 hover:bg-red-500 text-white text-xs font-bold transition shadow-glass border border-red-400/40 cursor-pointer"
             >
-              <Square size={12} fill="currentColor" /> {t?.doneSpeaking || "Done Speaking (Send)"}
+              <Square size={12} fill="currentColor" /> {t?.endLiveCall || "End Live Call"}
             </button>
           </div>
         ) : (

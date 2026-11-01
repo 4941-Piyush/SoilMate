@@ -7,6 +7,7 @@ import LanguageSelector from './LanguageSelector'
 import LocationInput from './LocationInput'
 import LiveProgressTicker from './LiveProgressTicker'
 import useSpeech from '../hooks/useSpeech'
+import useGeminiLive from '../hooks/useGeminiLive'
 import { chatStream, chatSync } from '../services/api'
 import { getUITranslations } from '../utils/translations'
 import { stopCurrentAudio, playAudioBase64 } from '../utils/audioManager'
@@ -196,25 +197,82 @@ export default function ChatPanel({
     }
   }
 
+  // Gemini Multimodal Live WebSocket Hook for sub-second conversational speech-to-speech
+  const geminiLive = useGeminiLive({
+    uiLanguage,
+    location,
+    sessionId,
+    onProgress: (ev) => {
+      setStreamingEvent(ev)
+    },
+    onComplete: (data) => {
+      setStreamingEvent(null)
+      if (data.session_id) setSessionId(data.session_id)
+      if (data.farmer_profile) {
+        setFarmerProfile?.(data.farmer_profile)
+        if (data.farmer_profile.location_name && data.farmer_profile.latitude != null) {
+          setLocation({
+            name: data.farmer_profile.location_name,
+            lat: data.farmer_profile.latitude,
+            lon: data.farmer_profile.longitude,
+            state: data.farmer_profile.state || ''
+          })
+        }
+      }
+      if (data.content) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `asst_${Date.now()}`,
+            role: 'assistant',
+            content: data.content,
+            language: uiLanguage,
+            created_at: new Date().toISOString()
+          }
+        ])
+      }
+    },
+    onError: (err) => {
+      console.warn('Gemini Live WebSocket notice:', err.message)
+    }
+  })
+
   // Voice speech hook uses the active spokenLanguage
   const speech = useSpeech(spokenLanguage, (transcript) => {
     handleSendMessage(transcript, true)
   })
 
+  const isLiveActive = geminiLive.active || geminiLive.connecting
+
   // Trigger tab switch when user starts speech listening
   const handleOrbToggle = () => {
     // Silence audio immediately upon tapping to talk
     stopCurrentAudio()
-    if (!speech.listening) {
-      onUserActivity?.()
-    }
-    speech.toggle()
+    onUserActivity?.()
+    geminiLive.toggleLive()
   }
 
-  const speechProxy = {
-    ...speech,
-    toggle: handleOrbToggle
+  const liveSpeechProxy = {
+    listening: isLiveActive,
+    speaking: geminiLive.speaking,
+    interim: geminiLive.connecting
+      ? (t?.connecting || "Connecting Live...")
+      : geminiLive.speaking
+      ? (t?.speakToInterrupt || "SoilMate is speaking (speak to interrupt)...")
+      : geminiLive.liveTranscript
+      ? geminiLive.liveTranscript
+      : (t?.listening || "Listening... Speak naturally"),
+    error: null,
+    toggle: handleOrbToggle,
+    clearError: () => {}
   }
+
+  const handleNewSessionAction = () => {
+    stopCurrentAudio()
+    geminiLive.disconnectLive()
+    onNewSession?.()
+  }
+
 
   const latestMessage = messages[messages.length - 1]
 
@@ -242,10 +300,7 @@ export default function ChatPanel({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  stopCurrentAudio()
-                  onNewSession?.()
-                }}
+                onClick={handleNewSessionAction}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-purple-900/40 border border-purple-500/30 text-purple-200 hover:text-white hover:bg-purple-800/60 transition shadow-glass text-xs font-semibold cursor-pointer"
                 title={t.newSession || "New Session"}
               >
@@ -319,10 +374,7 @@ export default function ChatPanel({
 
               <button
                 type="button"
-                onClick={() => {
-                  stopCurrentAudio()
-                  onNewSession?.()
-                }}
+                onClick={handleNewSessionAction}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-purple-900/40 border border-purple-500/30 text-purple-200 hover:text-white hover:bg-purple-800/60 transition shadow-glass text-xs font-semibold cursor-pointer"
                 title={t.newSession || "New Session"}
               >
@@ -341,14 +393,14 @@ export default function ChatPanel({
           {/* Center: Push-to-Talk Animated 3D Glowing Mesh Orb */}
           <div className="flex-1 flex flex-col items-center justify-center p-4 overflow-hidden">
             <VoiceAssistant
-              speech={speechProxy}
+              speech={liveSpeechProxy}
               t={t}
             />
           </div>
 
           {/* Bottom: Clickable Live Transcript Banner */}
           <div className="p-4 pt-1 pb-3 shrink-0">
-            {speech.listening ? (
+            {isLiveActive ? (
               <div
                 onClick={() => setChatWindowOpen(true)}
                 className="w-full cursor-pointer rounded-2xl border-2 border-cyan-400 bg-dark-900 p-3.5 shadow-[0_0_30px_rgba(56,189,248,0.4)] transition hover:border-cyan-300 group"
@@ -356,14 +408,14 @@ export default function ChatPanel({
                 <div className="flex items-center justify-between text-xs text-cyan-300 font-bold mb-1">
                   <span className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
-                    {t.liveTranscript}
+                    {geminiLive.speaking ? (t?.speaking || "SoilMate Speaking...") : (t?.liveTranscript || "Live Voice")}
                   </span>
                   <span className="text-[10px] text-purple-300 group-hover:text-white">
                     {t.clickToChat}
                   </span>
                 </div>
                 <p className="text-sm font-bold live-highlight tracking-wide leading-relaxed min-h-[24px]">
-                  {speech.interim ? speech.interim : t.listening}
+                  {liveSpeechProxy.interim}
                 </p>
               </div>
             ) : streamingEvent ? (
@@ -381,7 +433,7 @@ export default function ChatPanel({
                 <div className="flex items-center justify-between text-xs text-purple-300 font-semibold mb-1">
                   <span className="flex items-center gap-1.5">
                     <MessageSquare size={13} className="text-purple-400" />
-                    {latestMessage ? (latestMessage.role === 'user' ? 'You:' : 'SoilMate:') : t.chatTitle}
+                    {latestMessage ? (latestMessage.role === 'user' ? (t.you ? `${t.you}:` : 'You:') : (t.appTitle ? `${t.appTitle}:` : 'SoilMate:')) : t.chatTitle}
                   </span>
                   <span className="text-[10px] text-purple-400 group-hover:text-white flex items-center gap-0.5">
                     {t.clickToChat} ({messages.length}) <ChevronUp size={12} />

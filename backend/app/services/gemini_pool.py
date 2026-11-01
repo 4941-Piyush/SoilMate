@@ -54,7 +54,7 @@ class GeminiKeyManager:
 
     async def generate_with_fallback(
         self,
-        model: str = "gemini-3.8-flash",
+        model: str = "gemini-3.5-flash",
         contents: Any = None,
         config: Optional[types.GenerateContentConfig] = None,
         max_attempts: Optional[int] = None
@@ -68,7 +68,7 @@ class GeminiKeyManager:
 
         # Candidate models to try in case of 503 high-demand spike on a specific model
         candidate_models = [model]
-        for fallback in ["gemini-2.5-flash", "gemini-1.5-flash"]:
+        for fallback in ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-flash"]:
             if fallback not in candidate_models:
                 candidate_models.append(fallback)
 

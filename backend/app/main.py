@@ -1,8 +1,11 @@
 import json
 import asyncio
+import logging
 from contextlib import asynccontextmanager
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 from typing import Optional, List
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -38,6 +41,7 @@ from app.services.weather import get_weather_forecast, geocode_location
 from app.services.soil import get_soil_properties
 from app.services.mandi import get_mandi_prices
 from app.services.voice import speech_to_text, text_to_speech
+from app.services.gemini_live import handle_gemini_live_websocket
 from app.agent.tools import load_crops_data, load_schemes_data
 from app.agent.orchestrator import run_agent_turn
 
@@ -154,6 +158,21 @@ async def chat_stream_endpoint(req: ChatRequest):
             "X-Accel-Buffering": "no"
         }
     )
+
+# ==========================================
+# GEMINI MULTIMODAL LIVE WEBSOCKET
+# ==========================================
+
+@app.websocket("/api/ws/live")
+@app.websocket("/ws/live")
+async def gemini_live_endpoint(websocket: WebSocket):
+    """
+    Direct Gemini Multimodal Live WebSocket endpoint.
+    Streams 16kHz PCM audio bidirectionally with sub-second latency,
+    native emotional voice synthesis, real-time barge-in, and autonomous tool calling.
+    """
+    await handle_gemini_live_websocket(websocket)
+
 
 # ==========================================
 # HISTORY & SESSIONS
