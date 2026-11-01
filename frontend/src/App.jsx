@@ -1,45 +1,168 @@
-import { useEffect, useState, useCallback } from 'react'
-import { CheckCircle2, XCircle } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
 import ChatPanel from './components/ChatPanel'
 import DashboardPanel from './components/DashboardPanel'
-import { fetchCropAdvice, fetchSchedule, fetchWeather } from './services/api'
+import { fetchChatHistory, fetchSessionDetail, fetchAdvisoryDetail } from './services/api'
 
 export default function App() {
-  const [language, setLanguage] = useState('English')
-  const [leftW, setLeftW] = useState(460)
-  const [location, setLocation] = useState('Haryana')
-  const [weather, setWeather] = useState(null)
-  const [advice, setAdvice] = useState(null)
-  const [schedule, setSchedule] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [toast, setToast] = useState(null)
-  const notify = useCallback((msg, kind = 'ok') => { setToast({ msg, kind }); setTimeout(() => setToast(null), 3500) }, [])
+  // 1. UI Language: persistent in localStorage, defaults to 'hi'
+  const [uiLanguage, setUiLanguageState] = useState(() => {
+    try {
+      return localStorage.getItem('soilmate_ui_lang') || 'hi'
+    } catch (_) {
+      return 'hi'
+    }
+  })
 
+  // 2. Spoken Language: language spoken or typed by farmer for chat, voice TTS & agronomic advice.
+  const [spokenLanguage, setSpokenLanguageState] = useState(() => {
+    try {
+      return localStorage.getItem('soilmate_spoken_lang') || 'hi'
+    } catch (_) {
+      return 'hi'
+    }
+  })
+
+  // User explicitly selects UI Language from top dropdown
+  const handleUiLanguageChange = (newLang) => {
+    setUiLanguageState(newLang)
+    try {
+      localStorage.setItem('soilmate_ui_lang', newLang)
+    } catch (_) {}
+    // Seamless voice readiness: synchronize listening model with chosen UI language
+    setSpokenLanguageState(newLang)
+    try {
+      localStorage.setItem('soilmate_spoken_lang', newLang)
+    } catch (_) {}
+  }
+
+  // System dynamically detects spoken or typed language from conversation
+  const handleSpokenLanguageChange = (detectedLang) => {
+    if (detectedLang && detectedLang !== spokenLanguage) {
+      setSpokenLanguageState(detectedLang)
+      try {
+        localStorage.setItem('soilmate_spoken_lang', detectedLang)
+      } catch (_) {}
+    }
+  }
+
+  // Zero mock location: starts as null, populated only when added by user or detected by agent
+  const [location, setLocation] = useState(null)
+  const [farmerProfile, setFarmerProfile] = useState(null)
+
+  const [sessionId, setSessionId] = useState(null)
+  const [messages, setMessages] = useState([])
+  const [streamingEvent, setStreamingEvent] = useState(null)
+
+  // 5 Tabs: 'workflow' (default) -> switches to 'advice'/'schedule'/'profile' -> back to 'workflow' on talk
+  const [activeTab, setActiveTab] = useState('workflow')
+  const [latestAdvisory, setLatestAdvisory] = useState(null)
+
+  // Find latest assistant message and tool calls
+  const assistantMessages = messages.filter((m) => m.role === 'assistant')
+  const latestAssistantMessage = assistantMessages[assistantMessages.length - 1] || null
+  const latestToolCalls = latestAssistantMessage?.tool_calls || []
+
+  // Automatic tab switching based on talk & output
   useEffect(() => {
-    setLoading(true)
-    const p = { language, location }
-    Promise.all([fetchCropAdvice(p), fetchSchedule(p), fetchWeather(p)])
-      .then(([a, s, w]) => { setAdvice(a); setSchedule(s); setWeather(w) })
-      .catch(() => notify('Could not load dashboard data.', 'error'))
-      .finally(() => setLoading(false))
-  }, [language, location, notify])
+    if (latestAssistantMessage?.advisory_id) {
+      fetchAdvisoryDetail(latestAssistantMessage.advisory_id)
+        .then((adv) => {
+          if (adv) {
+            setLatestAdvisory(adv)
+            setActiveTab('advice')
+          }
+        })
+        .catch(() => {})
+    } else if (latestAssistantMessage?.tool_calls?.some(t => t.tool === 'query_crop_database')) {
+      setActiveTab('advice')
+    } else if (latestAssistantMessage?.tool_calls?.some(t => t.tool === 'update_farmer_profile')) {
+      setActiveTab('profile')
+    } else if (
+      latestAssistantMessage?.content &&
+      (latestAssistantMessage.content.toLowerCase().includes('schedule') ||
+       latestAssistantMessage.content.toLowerCase().includes('sowing') ||
+       latestAssistantMessage.content.includes('बुवाई') ||
+       latestAssistantMessage.content.includes('कटाई'))
+    ) {
+      setActiveTab('schedule')
+    }
+  }, [latestAssistantMessage])
 
-  // Backend chat replies may include fresh advice/schedule
-  const onReply = (res) => { if (res.advice) setAdvice(res.advice); if (res.schedule) setSchedule(res.schedule) }
+  // When user begins talking or messaging again, automatically flip back to 'workflow'
+  const handleUserActivity = () => {
+    setActiveTab('workflow')
+  }
+
+  // Load chat history & remembered farmer profile when a previous session is selected
+  const handleSelectSession = async (sid) => {
+    if (!sid) return
+    setSessionId(sid)
+    try {
+      const [history, sess] = await Promise.all([
+        fetchChatHistory(sid),
+        fetchSessionDetail(sid).catch(() => null)
+      ])
+      setMessages(history)
+      if (sess) {
+        if (sess.language) handleSpokenLanguageChange(sess.language)
+        setFarmerProfile({
+          location_name: sess.location_name,
+          latitude: sess.latitude,
+          longitude: sess.longitude,
+          state: sess.state,
+          district: sess.district,
+          land_size_acres: sess.land_size_acres,
+          primary_crop: sess.primary_crop,
+          soil_type: sess.soil_type
+        })
+        if (sess.location_name && sess.latitude != null && sess.longitude != null) {
+          setLocation({
+            name: sess.location_name,
+            lat: sess.latitude,
+            lon: sess.longitude,
+            state: sess.state || ''
+          })
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load session history:', e)
+    }
+  }
 
   return (
-    <div className="min-h-full lg:flex lg:h-full lg:overflow-hidden" style={{ '--lw': `${leftW}px`, background: 'radial-gradient(circle at 15% 25%, #BAE6FD99, transparent 50%), radial-gradient(circle at 92% 8%, #C4B5FD66, transparent 45%), #F5F8FF' }}>
-      <ChatPanel language={language} setLanguage={setLanguage} location={location} notify={notify} onReply={onReply} />
-      <div aria-hidden title="Drag to resize · double-click to reset" className="relative z-10 -mx-1.5 hidden w-3 shrink-0 cursor-col-resize touch-none lg:block"
-        onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
-        onPointerMove={(e) => { if (e.buttons === 1) setLeftW(Math.round(Math.min(Math.max(e.clientX, 320), window.innerWidth * 0.7))) }}
-        onDoubleClick={() => setLeftW(460)} />
-      <DashboardPanel weather={weather} location={location} onLocation={setLocation} advice={advice} schedule={schedule} loading={loading} />
-      {toast && (
-        <div role="status" className={`fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold text-white shadow-soft ${toast.kind === 'error' ? 'bg-black' : 'bg-navy'}`}>
-          {toast.kind === 'error' ? <XCircle size={18} /> : <CheckCircle2 size={18} />}{toast.msg}
-        </div>
-      )}
+    <div className="flex h-screen w-screen overflow-hidden bg-dark-950 font-sans text-stone-100 antialiased select-none">
+      {/* Left: Push-to-Talk Voice & Interaction Panel with Chat Overlay */}
+      <ChatPanel
+        uiLanguage={uiLanguage}
+        setUiLanguage={handleUiLanguageChange}
+        spokenLanguage={spokenLanguage}
+        setSpokenLanguage={handleSpokenLanguageChange}
+        location={location}
+        setLocation={setLocation}
+        sessionId={sessionId}
+        setSessionId={setSessionId}
+        messages={messages}
+        setMessages={setMessages}
+        onUserActivity={handleUserActivity}
+        streamingEvent={streamingEvent}
+        setStreamingEvent={setStreamingEvent}
+        setFarmerProfile={setFarmerProfile}
+      />
+
+      {/* Right: Rounded Box Tabs (Workflow, Advice, Schedule, Profile, History) */}
+      <DashboardPanel
+        location={location}
+        uiLanguage={uiLanguage}
+        activeSessionId={sessionId}
+        onSelectSession={handleSelectSession}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        latestToolCalls={latestToolCalls}
+        streamingEvent={streamingEvent}
+        latestAdvisory={latestAdvisory}
+        latestAssistantMessage={latestAssistantMessage}
+        farmerProfile={farmerProfile}
+      />
     </div>
   )
 }

@@ -1,37 +1,192 @@
-// ===== API SERVICE LAYER — connect your backend here =====
-// Set VITE_API_BASE_URL and VITE_USE_MOCK=false in .env to use real endpoints.
-import * as mock from './mock.js'
-const BASE = import.meta.env.VITE_API_BASE_URL || ''
-export const USE_MOCK = String(import.meta.env.VITE_USE_MOCK) !== 'false'
+// ===== SOILMATE REAL-TIME API CLIENT =====
+// Connects directly to the FastAPI backend. Zero mock data.
 
-async function http(path, opts = {}) {
-  const res = await fetch(`${BASE}${path}`, { headers: { 'Content-Type': 'application/json' }, ...opts })
-  if (!res.ok) throw new Error(`Request failed (${res.status})`)
+const BASE = import.meta.env.VITE_API_BASE_URL || '/api'
+
+async function request(path, options = {}) {
+  const url = `${BASE}${path}`
+  const headers = options.headers || {}
+  
+  if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json'
+  }
+
+  const res = await fetch(url, { ...options, headers })
+  if (!res.ok) {
+    let errorDetail = `Request failed (${res.status})`
+    try {
+      const errJson = await res.json()
+      if (errJson.detail) errorDetail = errJson.detail
+    } catch (_) {}
+    throw new Error(errorDetail)
+  }
   return res.json()
 }
-const post = (p, body) => http(p, { method: 'POST', body: JSON.stringify(body) })
-const qs = (o) => new URLSearchParams(o).toString()
 
-/** POST /chat/text  {message, language, location}  ->  {reply, advice?, schedule?} */
-export const sendTextMessage = (message, language, location) =>
-  USE_MOCK ? mock.chatReply(message, language) : post('/chat/text', { message, language, location })
-
-/** POST /chat/voice  multipart audio blob OR transcript  ->  {reply, transcript} */
-export const sendVoiceMessage = async ({ audioBlob, transcript, language, location }) => {
-  if (USE_MOCK) return mock.chatReply(transcript, language)
-  if (audioBlob) {
-    const fd = new FormData()
-    fd.append('audio', audioBlob); fd.append('language', language)
-    const res = await fetch(`${BASE}/chat/voice`, { method: 'POST', body: fd })
-    if (!res.ok) throw new Error('Voice request failed')
-    return res.json()
-  }
-  return post('/chat/text', { message: transcript, language, location, source: 'voice' })
+/** Check backend health and API key readiness */
+export async function checkHealth() {
+  return request('/health')
 }
 
-/** GET /advice?language=&location=  ->  advice object (see mock.js for shape) */
-export const fetchCropAdvice = (p) => USE_MOCK ? Promise.resolve(null) : http(`/advice?${qs(p)}`)
-/** GET /schedule?language=&location=  ->  schedule object */
-export const fetchSchedule = (p) => USE_MOCK ? Promise.resolve(null) : http(`/schedule?${qs(p)}`)
-/** GET /weather?location=  ->  {summary, temperatureC, humidity, rainProbability} */
-export const fetchWeather = (p) => USE_MOCK ? Promise.resolve(null) : http(`/weather?${qs(p)}`)
+/** Synchronous Chat Turn (POST /api/chat) */
+export async function chatSync({ message, sessionId, language, location, voiceOutput = true }) {
+  return request('/chat', {
+    method: 'POST',
+    body: JSON.stringify({
+      message,
+      session_id: sessionId || null,
+      language: language || null,
+      location: location || null,
+      voice_output: voiceOutput
+    })
+  })
+}
+
+/**
+ * Server-Sent Events (SSE) Streaming Chat (POST /api/chat/stream)
+ * Streams real-time progress events ('thinking', 'tool_start', 'tool_end', 'synthesizing', etc.)
+ * followed by the final completion event.
+ */
+export async function chatStream(
+  { message, sessionId, language, location, voiceOutput = true, signal },
+  { onProgress, onComplete, onError }
+) {
+  const url = `${BASE}/chat/stream`
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream'
+      },
+      body: JSON.stringify({
+        message,
+        session_id: sessionId || null,
+        language: language || null,
+        location: location || null,
+        voice_output: voiceOutput
+      })
+    })
+
+    if (!res.ok) {
+      let detail = `Stream request failed (${res.status})`
+      try {
+        const j = await res.json()
+        if (j.detail) detail = j.detail
+      } catch (_) {}
+      throw new Error(detail)
+    }
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n\n')
+      buffer = lines.pop() || '' // Keep unfinished chunk in buffer
+
+      for (const block of lines) {
+        if (!block.trim()) continue
+        const eventMatch = block.match(/event:\s*([^\n]+)/)
+        const dataMatch = block.match(/data:\s*([\s\S]+)$/)
+
+        if (eventMatch && dataMatch) {
+          const eventType = eventMatch[1].trim()
+          try {
+            const parsedData = JSON.parse(dataMatch[1].trim())
+            if (eventType === 'progress' && onProgress) {
+              onProgress(parsedData)
+            } else if (eventType === 'complete' && onComplete) {
+              onComplete(parsedData)
+            } else if (eventType === 'error' && onError) {
+              onError(new Error(parsedData.message || 'Stream error'))
+            }
+          } catch (e) {
+            console.error('SSE parse error:', e, block)
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      // User aborted/interrupted in favor of new question - ignore cleanly
+      return
+    }
+    if (onError) onError(err)
+    else throw err
+  }
+}
+
+/** Retrieve previous chat history for a session */
+export async function fetchChatHistory(sessionId) {
+  if (!sessionId) return []
+  return request(`/chat/history/${encodeURIComponent(sessionId)}`)
+}
+
+/** List recent sessions */
+export async function fetchSessions(limit = 20) {
+  return request(`/sessions?limit=${limit}`)
+}
+
+/** Get detail of a specific session with farmer profile */
+export async function fetchSessionDetail(sessionId) {
+  if (!sessionId) return null
+  return request(`/sessions/${encodeURIComponent(sessionId)}`)
+}
+
+/** List saved crop advisories & schedules */
+export async function fetchAdvisories({ sessionId, crop, limit = 20 } = {}) {
+  const params = new URLSearchParams()
+  if (sessionId) params.append('session_id', sessionId)
+  if (crop) params.append('crop', crop)
+  if (limit) params.append('limit', limit)
+  return request(`/advisories?${params.toString()}`)
+}
+
+/** Get full details of a specific advisory */
+export async function fetchAdvisoryDetail(id) {
+  return request(`/advisories/${encodeURIComponent(id)}`)
+}
+
+/** Fetch live 7-day weather from Open-Meteo */
+export async function fetchLiveWeather(lat, lon) {
+  return request(`/weather?lat=${lat}&lon=${lon}`)
+}
+
+/** Fetch live soil analysis from SoilGrids */
+export async function fetchLiveSoil(lat, lon) {
+  return request(`/soil?lat=${lat}&lon=${lon}`)
+}
+
+/** Fetch live mandi rates from Agmarknet */
+export async function fetchLiveMandi(state, commodity) {
+  const params = new URLSearchParams({ commodity })
+  if (state) params.append('state', state)
+  return request(`/mandi?${params.toString()}`)
+}
+
+/** Search place coordinates */
+export async function geocodePlace(query) {
+  return request(`/geocode?query=${encodeURIComponent(query)}`)
+}
+
+/** Speech-to-Text: Upload audio blob */
+export async function uploadSpeechAudio(audioBlob, language = null) {
+  const fd = new FormData()
+  fd.append('file', audioBlob, 'speech.wav')
+  if (language) fd.append('language', language)
+  return request('/voice/stt', { method: 'POST', body: fd })
+}
+
+/** Text-to-Speech: Synthesize text into voice */
+export async function synthesizeSpeech(text, language = 'hi') {
+  return request('/voice/tts', {
+    method: 'POST',
+    body: JSON.stringify({ text, language })
+  })
+}

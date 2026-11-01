@@ -1,0 +1,140 @@
+import React, { useEffect, useState } from 'react'
+import { Calendar, ShieldAlert, BookOpen, RefreshCw, ChevronRight, Sprout, ArrowLeft } from 'lucide-react'
+import { fetchAdvisories, fetchAdvisoryDetail } from '../services/api'
+import { localizePlaceName, localizeCropName } from '../utils/geoLocalization'
+
+export default function AdvisoryHistory({ sessionId, t }) {
+  const [advisories, setAdvisories] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [selected, setSelected] = useState(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+
+  const loadAdvisories = async () => {
+    setLoading(true)
+    try {
+      const res = await fetchAdvisories()
+      setAdvisories(res)
+    } catch (e) {
+      console.error('Failed to load advisories:', e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadAdvisories()
+  }, [sessionId])
+
+  const openDetail = async (id) => {
+    setDetailLoading(true)
+    try {
+      const detail = await fetchAdvisoryDetail(id)
+      setSelected(detail)
+    } catch (e) {
+      console.error('Failed to fetch detail:', e)
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  if (selected) {
+    return (
+      <div className="rounded-2xl border border-purple-500/25 bg-dark-900/70 p-5 shadow-glass space-y-4 backdrop-blur-md">
+        <button
+          onClick={() => setSelected(null)}
+          className="text-xs font-bold text-purple-300 hover:text-white flex items-center gap-1.5 transition"
+        >
+          <ArrowLeft size={14} /> {t?.historyBackToList || 'Back to Advisory List'}
+        </button>
+
+        <div className="flex items-center justify-between pt-2 border-t border-purple-500/20">
+          <div>
+            <h4 className="text-lg font-bold text-white flex items-center gap-2">
+              <Sprout className="text-emerald-400" />
+              {localizeCropName(selected.crop_name, t?._langCode || 'hi')} {selected.crop_name_local && `(${selected.crop_name_local})`}
+            </h4>
+            <p className="text-xs text-purple-300/70">
+              {selected.location_name && `${t?.historyLocation || 'Location'}: ${localizePlaceName(selected.location_name, t?._langCode || 'hi')} · `}
+              {new Date(selected.created_at).toLocaleDateString()}
+            </p>
+          </div>
+          {selected.season && (
+            <span className="text-xs font-bold uppercase px-2.5 py-1 rounded-full bg-purple-900/60 border border-purple-500/30 text-purple-200">
+              {selected.season}
+            </span>
+          )}
+        </div>
+
+        <div className="rounded-xl bg-purple-950/40 p-4 border border-purple-500/20 text-xs sm:text-sm text-stone-200 leading-relaxed whitespace-pre-wrap">
+          {selected.full_advisory_text}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-2xl border border-purple-500/25 bg-dark-900/70 p-5 shadow-glass space-y-4 backdrop-blur-md">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <BookOpen className="text-purple-400" size={24} />
+          <div>
+            <h3 className="text-sm font-bold text-white">{t?.historyAdvisoriesTitle || 'Saved Crop Advisories'}</h3>
+            <p className="text-xs text-purple-300/70">{t?.historyAdvisoriesSubtitle || 'Persistent agronomic history saved in database'}</p>
+          </div>
+        </div>
+        <button
+          onClick={loadAdvisories}
+          className="text-xs text-purple-400 hover:text-white flex items-center gap-1 transition"
+          title="Refresh history"
+        >
+          <RefreshCw size={12} /> {t?.historyRefresh || 'Refresh'}
+        </button>
+      </div>
+
+      {loading && (
+        <div className="p-6 text-center text-xs text-purple-300">
+          <RefreshCw size={16} className="animate-spin mx-auto mb-2 text-purple-400" />
+          {t?.historyAdvisoriesLoading || 'Loading saved advisories...'}
+        </div>
+      )}
+
+      {!loading && advisories.length === 0 && (
+        <div className="p-6 text-center text-xs text-purple-300/70 bg-purple-950/30 rounded-xl border border-purple-500/20">
+          <Sprout size={24} className="mx-auto mb-1 text-purple-400 opacity-60" />
+          <p className="font-semibold text-white">{t?.historyNoAdvisoriesTitle || 'No saved crop advisories'}</p>
+          <p className="mt-1 text-purple-400/80">{t?.historyNoAdvisoriesDesc || 'Advisories generated during chat are automatically saved here.'}</p>
+        </div>
+      )}
+
+      {advisories.length > 0 && (
+        <div className="divide-y divide-purple-500/15 border border-purple-500/20 rounded-xl overflow-hidden max-h-72 overflow-y-auto scroll-thin">
+          {advisories.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => openDetail(a.id)}
+              className="w-full text-left p-3 flex items-center justify-between bg-dark-900/40 hover:bg-purple-950/40 transition"
+            >
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-xs text-white">
+                    {localizeCropName(a.crop_name, t?._langCode || 'hi')} {a.crop_name_local && `(${a.crop_name_local})`}
+                  </span>
+                  {a.season && (
+                    <span className="text-[10px] uppercase font-bold text-purple-300 bg-purple-950/80 px-1.5 py-0.2 rounded border border-purple-500/30">
+                      {a.season}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-purple-300/70 mt-1 flex items-center gap-2">
+                  {a.location_name && <span>📍 {localizePlaceName(a.location_name, t?._langCode || 'hi')}</span>}
+                  <span>{new Date(a.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-purple-400" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

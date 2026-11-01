@@ -1,21 +1,163 @@
-import { useState } from 'react'
-import WeatherWidget from './WeatherWidget'
+import React from 'react'
+import {
+  Activity,
+  ShieldCheck,
+  Calendar,
+  User,
+  History,
+  Sparkles
+} from 'lucide-react'
 import AdvicePanel from './AdvicePanel'
 import SchedulePanel from './SchedulePanel'
-function Tab({ id, tab, setTab, children }) {
-  return <button onClick={() => setTab(id)} aria-pressed={tab === id}
-    className={`flex-1 rounded-xl border border-navy px-4 py-3 text-sm font-bold transition ${tab === id ? 'border-transparent bg-gradient-to-r from-blue-600 to-violet-600 text-white shadow-soft' : 'bg-transparent text-navy hover:bg-blush-200'}`}>{children}</button>
-}
-export default function DashboardPanel({ weather, location, onLocation, advice, schedule, loading }) {
-  const [tab, setTab] = useState('advice')
+import ChatProfilePanel from './ChatProfilePanel'
+import AgentTraceView from './AgentTraceView'
+import LiveProgressTicker from './LiveProgressTicker'
+import AdvisoryHistory from './AdvisoryHistory'
+import SessionHistory from './SessionHistory'
+import { getUITranslations } from '../utils/translations'
+
+export default function DashboardPanel({
+  location,
+  uiLanguage = 'hi',
+  activeSessionId,
+  onSelectSession,
+  activeTab,
+  setActiveTab,
+  latestToolCalls,
+  streamingEvent,
+  latestAdvisory,
+  latestAssistantMessage,
+  farmerProfile
+}) {
+  const t = getUITranslations(uiLanguage)
+
+  const TABS = [
+    { id: 'workflow', label: t.tabWorkflow, icon: Activity },
+    { id: 'advice', label: t.tabAdvice, icon: ShieldCheck },
+    { id: 'schedule', label: t.tabSchedule, icon: Calendar },
+    { id: 'profile', label: t.tabProfile, icon: User },
+    { id: 'history', label: t.tabHistory, icon: History }
+  ]
   return (
-    <main className="scroll-thin min-w-0 flex-1 space-y-4 p-5 lg:h-full lg:overflow-y-auto lg:p-8">
-      <WeatherWidget weather={weather} location={location} onLocation={onLocation} />
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <Tab id="advice" tab={tab} setTab={setTab}>Crop Protection Advice</Tab>
-        <Tab id="schedule" tab={tab} setTab={setTab}>Planting &amp; Harvesting Schedule</Tab>
+    <main className="flex-1 flex flex-col h-full overflow-hidden bg-dark-950/70 p-3 sm:p-5 lg:p-6 space-y-4">
+      {/* 5 Tabs Floating Rounded Box with Shadows */}
+      <div className="rounded-2xl border border-purple-500/25 bg-dark-900/80 p-1.5 shadow-[0_12px_36px_rgba(0,0,0,0.55)] backdrop-blur-xl shrink-0 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+        {TABS.map((tab) => {
+          const Icon = tab.icon
+          const isActive = activeTab === tab.id
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 min-w-[130px] flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+                isActive
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-[0_0_24px_rgba(168,85,247,0.45)] border border-purple-400/40'
+                  : 'text-purple-300 hover:text-white hover:bg-purple-950/40'
+              }`}
+            >
+              <Icon size={15} className={isActive ? 'text-white' : 'text-purple-400'} />
+              <span>{tab.label}</span>
+              {tab.id === 'workflow' && streamingEvent && (
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping ml-1" />
+              )}
+            </button>
+          )
+        })}
       </div>
-      <div key={tab} className="pane">{tab === 'advice' ? <AdvicePanel data={advice} loading={loading} /> : <SchedulePanel data={schedule} loading={loading} />}</div>
+
+      {/* Main Tab Content Viewport */}
+      <div className="flex-1 overflow-y-auto pr-1 pb-4 scroll-thin rounded-3xl border border-purple-500/15 bg-dark-900/40 p-4 shadow-[0_16px_48px_rgba(0,0,0,0.6)] backdrop-blur-xl">
+        {/* 1. AGENT WORKFLOW (Default) */}
+        {activeTab === 'workflow' && (
+          <div className="space-y-4">
+            {/* Live Progress Ticker if active */}
+            {streamingEvent && (
+              <div className="p-1">
+                <LiveProgressTicker event={streamingEvent} />
+              </div>
+            )}
+
+            {/* Current Turn Tool Execution Trace */}
+            {latestToolCalls && latestToolCalls.length > 0 ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs text-purple-300 font-semibold px-1">
+                  <span>{t.traceTitle || 'Autonomous ReAct Tool Execution Trace'}</span>
+                  <span className="text-[10px] font-mono text-cyan-300">
+                    {latestToolCalls.length} {t.toolsInvoked || 'tool(s) invoked'}
+                  </span>
+                </div>
+                <AgentTraceView toolCalls={latestToolCalls} t={t} />
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-purple-500/20 bg-dark-900/50 p-6 text-center backdrop-blur-md shadow-glass space-y-4">
+                <div className="p-3.5 rounded-2xl bg-purple-950/80 border border-purple-500/30 text-purple-400 inline-block">
+                  <Activity size={28} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">{t.workflowTitle || 'Agent Workflow Live Monitor'}</h3>
+                  <p className="text-xs text-purple-300/70 max-w-md mx-auto mt-1 leading-relaxed">
+                    {t.workflowDesc || 'SoilMate uses an English Reasoning Core with Google Gemini 2.0 Flash and dynamic ReAct function calling. When you ask a question, live tool calls (Weather, SoilGrids, Mandi prices, ICAR crops) will stream here in real time.'}
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 max-w-lg mx-auto text-left text-xs pt-2">
+                  <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/15">
+                    <span className="text-[10px] font-bold text-purple-400 uppercase block">{t.workflowStep1Title || '1. Ingestion'}</span>
+                    <p className="text-purple-200 mt-0.5">{t.workflowStep1Desc || 'Indic speech or text standardized to English core.'}</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/15">
+                    <span className="text-[10px] font-bold text-cyan-400 uppercase block">{t.workflowStep2Title || '2. Dynamic Tools'}</span>
+                    <p className="text-purple-200 mt-0.5">{t.workflowStep2Desc || 'Real APIs queried on-demand with zero mock data.'}</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/15">
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase block">{t.workflowStep3Title || '3. Localized Output'}</span>
+                    <p className="text-purple-200 mt-0.5">{t.workflowStep3Desc || 'Advice translated back to farmer\'s native tongue + audio TTS.'}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 2. CROP ADVICE */}
+        {activeTab === 'advice' && (
+          <AdvicePanel
+            advisory={latestAdvisory}
+            latestAssistantMessage={latestAssistantMessage}
+            t={t}
+          />
+        )}
+
+        {/* 3. PLANTING SCHEDULE */}
+        {activeTab === 'schedule' && (
+          <SchedulePanel
+            advisory={latestAdvisory}
+            t={t}
+          />
+        )}
+
+        {/* 4. CHAT PROFILE */}
+        {activeTab === 'profile' && (
+          <ChatProfilePanel
+            location={location}
+            language={uiLanguage}
+            sessionId={activeSessionId}
+            farmerProfile={farmerProfile}
+            t={t}
+          />
+        )}
+
+        {/* 5. HISTORY */}
+        {activeTab === 'history' && (
+          <div className="space-y-5">
+            <AdvisoryHistory sessionId={activeSessionId} t={t} />
+            <SessionHistory
+              activeSessionId={activeSessionId}
+              onSelectSession={onSelectSession}
+              t={t}
+            />
+          </div>
+        )}
+      </div>
     </main>
   )
 }

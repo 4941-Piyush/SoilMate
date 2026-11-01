@@ -1,42 +1,114 @@
-import { useEffect, useRef } from 'react'
-import { Sprout, User, MessageCircleQuestion } from 'lucide-react'
-const fmt = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-function Msg({ m }) {
-  const me = m.role === 'user'
+import React, { useEffect, useRef, useState } from 'react'
+import { Sprout, User, Volume2, Globe, Sparkles } from 'lucide-react'
+import AgentTraceView from './AgentTraceView'
+import { playAudioBase64, stopCurrentAudio } from '../utils/audioManager'
+
+function MessageItem({ m, t }) {
+  const isUser = m.role === 'user'
+  const [showEnglish, setShowEnglish] = useState(false)
+  const [playing, setPlaying] = useState(false)
+
+  const playAudio = () => {
+    if (!m.audio_base64) return
+    setPlaying(true)
+    playAudioBase64(
+      m.audio_base64,
+      () => setPlaying(false),
+      () => setPlaying(false)
+    )
+  }
+
   return (
-    <div className={`flex gap-2 ${me ? 'flex-row-reverse' : ''}`}>
-      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${me ? 'bg-crimson text-white' : 'bg-navy text-white'}`}>{me ? <User size={18} /> : <Sprout size={18} />}</div>
-      <div className={`flex max-w-[80%] flex-col gap-1 ${me ? 'items-end' : ''}`}>
-        <div className={`whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed shadow-soft ${me ? 'rounded-tr-sm bg-navy text-white' : 'rounded-tl-sm border border-navy-100 bg-white text-navy'}`}>{m.text}</div>
-        <span className="px-1 text-[11px] text-navy-600">{me ? 'You' : 'Assistant'} · {fmt(m.time)}{m.voice && ' · voice'}{m.demo && <span className="ml-1 rounded bg-blush-200 px-1.5 py-0.5 font-bold text-crimson">Demo</span>}</span>
+    <div className={`flex gap-2.5 ${isUser ? 'flex-row-reverse' : 'flex-row'} my-2`}>
+      <div
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl shadow-md ${
+          isUser
+            ? 'bg-purple-600 text-white border border-purple-400/30'
+            : 'bg-gradient-to-br from-purple-800 to-indigo-900 text-purple-200 border border-purple-500/30'
+        }`}
+      >
+        {isUser ? <User size={16} /> : <Sprout size={16} />}
+      </div>
+
+      <div className={`flex max-w-[88%] flex-col gap-1 ${isUser ? 'items-end' : 'items-start'}`}>
+        <div
+          className={`rounded-2xl px-3.5 py-2.5 text-xs sm:text-sm leading-relaxed shadow-glass ${
+            isUser
+              ? 'rounded-tr-xs bg-gradient-to-r from-purple-600 to-indigo-700 text-white border border-purple-400/30'
+              : 'rounded-tl-xs bg-dark-850/90 text-stone-100 border border-purple-500/20 backdrop-blur-md'
+          }`}
+        >
+          <div className="whitespace-pre-wrap">{m.content}</div>
+
+          {!isUser && m.content_english && m.content_english !== m.content && (
+            <div className="mt-2 pt-2 border-t border-purple-500/15">
+              <button
+                onClick={() => setShowEnglish(!showEnglish)}
+                className="text-[11px] font-semibold text-purple-300 hover:text-white flex items-center gap-1 transition cursor-pointer"
+              >
+                <Globe size={11} />
+                {showEnglish ? (t?.hideEnglish || 'Hide English translation') : (t?.viewEnglish || 'View English translation')}
+              </button>
+              {showEnglish && (
+                <p className="mt-1 text-xs text-purple-200/90 italic bg-purple-950/50 p-2 rounded-lg border border-purple-500/20">
+                  {m.content_english}
+                </p>
+              )}
+            </div>
+          )}
+
+          {!isUser && m.audio_base64 && (
+            <div className="mt-2 pt-1 flex items-center gap-2">
+              <button
+                onClick={playAudio}
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition ${
+                  playing
+                    ? 'bg-purple-600 text-white animate-pulse shadow-orb'
+                    : 'bg-purple-900/40 text-purple-200 hover:bg-purple-800/60 border border-purple-500/30'
+                }`}
+              >
+                <Volume2 size={13} />
+                {playing ? (t?.playingVoice || 'Playing Voice...') : (t?.listenNativeVoice || 'Listen in Native Voice')}
+              </button>
+            </div>
+          )}
+
+          {!isUser && m.tool_calls && m.tool_calls.length > 0 && (
+            <div className="mt-2">
+              <AgentTraceView toolCalls={m.tool_calls} t={t} />
+            </div>
+          )}
+        </div>
+
+        <span className="text-[10px] text-purple-400/60 font-medium px-1">
+          {isUser ? (t?.you || 'You') : (t?.appTitle || 'SoilMate')} · {new Date(m.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {m.language && <span className="ml-1 uppercase text-purple-300/80">[{m.language}]</span>}
+        </span>
       </div>
     </div>
   )
 }
-export default function ChatMessages({ messages, typing, interim, listening }) {
-  const end = useRef(null)
-  useEffect(() => end.current?.scrollIntoView({ behavior: 'smooth' }), [messages, typing, interim])
-  if (!messages.length && !listening) return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center text-navy-600">
-      <MessageCircleQuestion size={40} className="text-crimson" />
-      <p className="font-bold text-navy">No questions yet</p>
-      <p className="text-sm">Tap the microphone or type below. Try: “My wheat leaves are turning yellow.”</p>
-    </div>
-  )
+
+export default function ChatMessages({ messages, streamingEvent, loading, t }) {
+  const bottomRef = useRef(null)
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, streamingEvent, loading])
+
   return (
-    <div className="scroll-thin flex-1 space-y-4 overflow-y-auto p-4" aria-live="polite">
-      {messages.map((m) => <Msg key={m.id} m={m} />)}
-      {listening && (
-        <div className="flex flex-row-reverse gap-2">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-crimson text-white"><User size={18} /></div>
-          <div className="max-w-[80%] rounded-2xl rounded-tr-sm border-2 border-dashed border-navy-200 bg-white/70 px-4 py-2.5 text-[15px] text-navy-600">{interim || 'Listening…'}</div>
+    <div className="flex-1 overflow-y-auto px-3 py-2 scroll-thin space-y-1">
+      {messages.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-48 text-center text-purple-300/50 space-y-1">
+          <p className="text-xs">{t?.noChatHistory || 'No chat history yet.'}</p>
+          <p className="text-[11px]">{t?.startChatPrompt || 'Speak or type your question to start.'}</p>
         </div>
+      ) : (
+        messages.map((m, idx) => (
+          <MessageItem key={m.id || idx} m={m} t={t} />
+        ))
       )}
-      {typing && (
-        <div className="flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-navy text-white"><Sprout size={18} /></div>
-          <div className="flex gap-1 rounded-2xl border border-navy-100 bg-white px-4 py-3" role="status" aria-label="Assistant is typing">{[0, 1, 2].map((i) => <span key={i} className="dot h-2 w-2 rounded-full bg-navy" style={{ animationDelay: `${i * 0.2}s` }} />)}</div></div>
-      )}
-      <div ref={end} />
+      <div ref={bottomRef} />
     </div>
   )
 }
